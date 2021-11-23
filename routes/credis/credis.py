@@ -1,5 +1,6 @@
 
 from json import encoder
+import logging
 import requests
 import json
 
@@ -11,12 +12,13 @@ class Credis(object):
         self.headers = headers
 
     def get_cluster_info(self, cluster_name):
-        print(self.url, cluster_name)
         res = requests.get(self.url + '/opsapi/GetOpsClusterV2?clusterName=' + cluster_name)
         res.encoding = 'utf-8';
+        logging.info("[get_cluster_info] cluster:%s result: %s" % (cluster_name, res.json()))
         return res.json()
     def close_credis_monitor(self, cluster_name, time):
-        res = requests.post(self.url + '/opsapi/cluster/monitor/'+ cluster_name +'/stop/' + time)
+        logging.info("[close_credis_monitor] cluster:%s close_time: %d" %(cluster_name, time))
+        res = requests.post(self.url + '/opsapi/cluster/monitor/'+ cluster_name +'/stop/' + str(time))
         res.encoding = 'utf-8';
         return res.json()
     def start_credis_monitor(self, cluster_name):
@@ -30,11 +32,15 @@ class Credis(object):
             'Token': dba_token
         });
         res.encoding = 'utf-8';
-        return res.json()
+        result = res.json()
+        logging.info("[del_instance] id: %d, result:%s" %(id, result))
+        return result
     def del_cluster(self, id):
         res = requests.post(self.url + "/redisapi/ClusterDelete", json={
             'ID': id,
             'Token': dba_token
         })
         res.encoding = 'utf-8';
-        return res.json()
+        result = res.json()
+        logging.info("[del_cluster] id: %d, result:%s" %(id, result))
+        return result
