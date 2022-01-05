@@ -170,6 +170,33 @@ class Api(object):
         else:
             print("function [del_cluster] argv error!!!!!")
             return
-
-
-
+    def config_set(self, argv):
+        # config_set <cluster> 
+        argc = len(argv)
+        if  argc >= 1:
+            info = self.credis.get_cluster_info(argv[0])
+            i = 1;
+            action = "set"
+            while i < argc:
+                if argv[i] == "crdt.set":
+                    action = "crdt.set"
+                    i+=1
+                    continue
+                elif argv[i] == "set":
+                    action = "set"
+                    i+=1
+                else:
+                    print("index : %d %s" % (i, argv[i]))
+                    groups = info["Groups"]
+                    for group in groups:
+                        instances = group["Instances"]
+                        groupId = group["ID"]
+                        print("groupId: %s" % (groupId))
+                        for instance in instances:
+                            print("instance: %s:%d ,id :%d" %(instance["IPAddress"], instance["Port"], instance["ID"]))
+                            redis = redis_tool.RedisSession(instance["IPAddress"], int(instance["Port"]))
+                            redis.config_set(action, argv[i], argv[i+1])
+                    i += 2
+        else:
+            print("function [del_cluster] argv error!!!!!")
+            return
