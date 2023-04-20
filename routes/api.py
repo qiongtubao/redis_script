@@ -198,5 +198,23 @@ class Api(object):
                             redis.config_set(action, argv[i], argv[i+1])
                     i += 2
         else:
-            print("function [del_cluster] argv error!!!!!")
+            print("function [config_set] argv error!!!!!")
+            return
+    def cluster_dbsize(self, argv):
+        argc = len(argv)
+        if  argc >= 1:
+            info = self.credis.get_cluster_info(argv[0])
+            groups = info["Groups"]
+            size = 0;
+            for group in groups:
+                instances = group["Instances"]
+                groupId = group["ID"]
+                print("groupId: %s" % (groupId))
+                redis = redis_tool.RedisSession(instances[0]["IPAddress"], int(instances[0]["Port"]))
+                redis_size = redis.dbsize();
+                size += redis_size
+                print("instance: %s:%d ,id :%d ,dbsize %d" %(instances[0]["IPAddress"], instances[0]["Port"], instances[0]["ID"], redis_size))
+            print("cluster %s dbsize %d" %(argv[0], size))
+        else:
+            print("function [cluster_dbsize] argv error!!!!!")
             return
