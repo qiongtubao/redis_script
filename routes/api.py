@@ -1,4 +1,5 @@
 # coding=utf-8
+import logging
 import credis
 import redis_tool
 from routes.redis_tool.redisSession import MonitorInfo
@@ -90,7 +91,6 @@ class Api(object):
     def k8s_del(self, argv):
         argc = len(argv)
         if argc >= 1:
-
             map = {}
             while len(argv) != 0:
                 info = self.k8s.get_docker_info(argv[0])
@@ -111,12 +111,64 @@ class Api(object):
                         break
                 
                 if will_del:
-                    self.k8s.del_docker(info)
-                    
-                        
-                    
+                    self.k8s.del_docker(info)   
         else:
             print("function [restore_sentinel] argv error!!!!!")
+            return
+    def del_cluster(self, argv):
+        argc = len(argv)
+        if  argc >= 1:
+            info = self.credis.get_cluster_info(argv[0])
+            # cluster.json
+            file = utils.File(argv[0] + ".json")
+            file.write_json(info)
+            groups = info["Groups"]
+            if len(groups) > 0:
+                self.credis.close_credis_monitor(argv[0], 10)
+            redises = []
+            for group in groups:
+                instances = group["Instances"]
+                groupId = group["ID"]
+                print("groupId: %s" % (groupId))
+                for instance in instances:
+                    print("instance: %s:%d ,id :%d" %(instance["IPAddress"], instance["Port"], instance["ID"]))
+                    redis = redis_tool.RedisSession(instance["IPAddress"], int(instance["Port"]))
+                    result = redis.get_sentinels()
+                    if result != None:
+                        for sentinel in result.sentinels:
+                            sentinel.remove(result.monitor_name)
+                        print("remove %s:%d sentinels success" % (instance["IPAddress"], instance["Port"]))
+                    self.credis.del_instance(instance["ID"])
+                    redises.append({
+                        'host': instance["IPAddress"], 
+                        'port': int(instance["Port"])
+                    })
+            logging.info("del all redis: %s" % (redises))
+            while len(redises) != 0:
+                docker_info = self.k8s.get_docker_info(redises[0]["host"], redises[0]["port"])
+                dockers = self.k8s.query_all_docker(docker_info)
+                if len(dockers) != 0:
+                    # 默认传入的参数不重
+                    will_del = True
+                    for docker in dockers:
+                        remove = False
+                        for i in range(len(redises)-1, -1, -1):
+                            if redises[i]["host"] == docker["host"] and redises[i]["port"] == docker["port"]:
+                                redises.pop(i)
+                                remove = True
+                                break
+                        if remove == False:
+                            logging.error("not find redis %s:%d" % (docker["host"], docker["port"]));
+                            will_del = False
+                            break
+                    
+                    if will_del:
+                        logging.info("[will del_docker] groupName:%s, groupId: %s, env: %s, dockerNum: %d " % (docker_info.groupName, docker_info.groupId, docker_info.env, docker_info.dockerNum));
+                        self.k8s.del_docker(docker_info)   
+            self.credis.del_cluster(info["ID"])
+
+        else:
+            print("function [del_cluster] argv error!!!!!")
             return
 
 
