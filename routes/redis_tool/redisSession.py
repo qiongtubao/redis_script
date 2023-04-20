@@ -71,3 +71,9 @@ class RedisSession(object):
         return monitor_info
 
         # return {"sentinels": sentinels, "monitor_name": monitor_name, "master": master}
+    def config_set(self, action, k, v):
+        session = redis.StrictRedis(self.host, self.port, socket_timeout = 5)
+        if action == "set":
+            session.config_set(k, v)
+        elif action == "crdt.set":
+            session.execute_command("config", "crdt.set", k, v)
