@@ -15,25 +15,42 @@ class Info(object):
     dockerNum = 2
     env = "UAT"
     groupId = ""
-    def __init__(self, env, groupName, groupId, dockerNum):
+    clusterName = ""
+    info = {}
+    def __init__(self, env, groupName, groupId, dockerNum, info):
         self.env = env
         self.groupName = groupName
         self.groupId = groupId
         self.dockerNum = dockerNum
+        self.info = info
+
 
 class K8s(object):
     def __init__(self, env):
         self.env = env
-    def get_docker_info(self, host, port=6379):
+    def get_docker_info(self, host, port=6379, groupId=0):
         res = requests.get('http://cd.release.ctripcorp.com/api/v2/redisservice/isdocker?ip=%s&port=%d' % (host, port))
         res.encoding = 'utf-8';
         result = res.json()
         payload = result["content"];
         logging.info('[get_docker_info] host: %s, port: %d , result: %s' % (host,port,result))
         if payload != '':
-            return Info(payload["env"], payload["dockerGroupName"], payload["groupId"], payload["dockerGroupNumber"])
+            return Info(payload["env"], payload["dockerGroupName"], groupId, payload["dockerGroupNumber"], payload)
         else:
             return None
+    def get_docker_info_by_groupname(self, info):
+        res = requests.post('http://cd.release.ctripcorp.com/api/v2/redisservice/fxgetstatus', headers=headers, json={
+            "groupId": info["groupId"],
+            "dockerGroupName": info["groupName"],
+            "env": info["env"]
+        })
+        result = res.json()
+        logging.info("get_docker_info_by_groupname groupId:%s ,dockerGroupName:%s, env: %s, result:%s" % (info["groupId"], info["groupName"],info["env"],result))
+        if result["issuccess"]:
+            return result["content"]
+        else:
+            return None
+
     def del_docker(self, info):
         res = requests.post('http://cd.release.ctripcorp.com/api/v2/redisservice/fxdelete', headers=headers, json={
             "groupId": info.groupId,
@@ -60,4 +77,21 @@ class K8s(object):
                 "port":int(c["port"])
             })
         return ips
+    def create_docker(self, info):
+        info["env"] = self.env;
+        res = requests.post("http://cd.release.ctripcorp.com/api/v2/redisservice/fxcreate", headers=headers, json=info);
+        res.encoding = 'utf-8';
+        result = res.json();
+        logging.info("[create_docker]: info:%s result:%s" % (info, result))
+        if result["issuccess"]:
+            return result["content"]
+
+    def env_2_idc(self, env):
+        #"UAT" => NTGXY
+        #"NTGXH" => "NTGXH"
+        if env == "UAT":
+            return "NTGXY";
+        else:
+            return env
+    
     

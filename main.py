@@ -55,7 +55,7 @@ if __name__ == '__main__':
         exit(0)
 
     config = Config(Env.__members__.get(sys.argv[1]))
-    api = routes.Api(config.get_credis_console_url(), config.get_credis_headers(), config.get_k8s_env())
+    api = routes.Api(config.get_credis_console_url(), config.get_credis_headers(), config.get_xpipe_url(), config.get_xpipe_headers(), config.get_k8s_env())
     eval('api.'+sys.argv[2])(sys.argv[3:])
     
     

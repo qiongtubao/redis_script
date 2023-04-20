@@ -25,7 +25,6 @@ class RedisSession(object):
     def __init__(self, host, port):
         self.host = host 
         self.port = port
-        print(host, port)
         try:
             self.client = redis.Redis(host, port)
         except Exception as e:
@@ -77,6 +76,19 @@ class RedisSession(object):
             session.config_set(k, v)
         elif action == "crdt.set":
             session.execute_command("config", "crdt.set", k, v)
+    def config_get(self, action, k):
+        session = redis.StrictRedis(self.host, self.port, socket_timeout = 5)
+        if action == "get":
+            return session.config_get(k)[k]
+        elif action == "crdt.get":
+            return session.execute_command("config", "crdt.get", k)[1]
     def dbsize(self):
         session = redis.StrictRedis(self.host, self.port, socket_timeout = 5)
         return session.dbsize()
+    def info_commandstats(self):
+        session = redis.StrictRedis(self.host, self.port, socket_timeout = 5)
+        return session.info("commandstats")
+    def slaveof(self, host, port):
+        session = redis.StrictRedis(self.host, self.port, socket_timeout = 5)
+        logging.info("redis[%s:%d] slaveof %s %d",self.host, self.port, host, port)
+        return session.slaveof(host, port)

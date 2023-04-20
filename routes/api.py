@@ -1,6 +1,8 @@
 # coding=utf-8
 import logging
 import credis
+from routes.docker import k8s
+import xpipe
 import redis_tool
 from routes.redis_tool.redisSession import MonitorInfo
 from routes.redis_tool.sentinel import Sentinel
@@ -8,11 +10,13 @@ import utils
 import json
 import math
 import docker
+import time
 
 class Api(object): 
-    def __init__(self, url, headers, k8s_env):
-        self.credis=credis.Credis(url, headers)
+    def __init__(self, credis_url, credis_headers, xpipe_url, xpipe_headers, k8s_env):
+        self.credis = credis.Credis(credis_url, credis_headers)
         self.k8s = docker.K8s(k8s_env)
+        self.xpipe = xpipe.Xpipe(xpipe_url, xpipe_headers)
     
     def get_cluster_info(self, argv):
         argc = len(argv)
@@ -68,6 +72,20 @@ class Api(object):
         else:
             print("function [remove_redis_sentinel] argv error!!!!!")
             return 
+    def remove_slave(self, argv):
+        argc = len(argv)
+        if  argc >= 4:
+            redis = redis_tool.RedisSession(argv[0], int(argv[1]))
+            result = redis.get_sentinels()
+            for sentinel in result.sentinels:
+                if sentinel.remove(result.monitor_name) == False:
+                    return
+            print("remove sentinels success")
+            slave = redis_tool.RedisSession(argv[2], int(argv[3]))
+            print("slaveof no one result %s" %(slave.slaveof("no", "one")))
+        else:
+            print("function [remove_redis_sentinel] argv error!!!!!")
+            return
     def restore_redis_sentinel(self, argv):
         argc = len(argv)
         if  argc >= 1:
@@ -83,8 +101,8 @@ class Api(object):
             return 
     def k8s_find(self, argv):
         argc = len(argv)
-        if  argc >= 1:
-            print(self.k8s.get_docker_info(argv[0]))
+        if  argc >= 2:
+            print(self.k8s.get_docker_info(argv[0], argv[1]))
         else:
             print("function [k8s_find] argv error!!!!!")
             return 
@@ -141,11 +159,13 @@ class Api(object):
                     self.credis.del_instance(instance["ID"])
                     redises.append({
                         'host': instance["IPAddress"], 
-                        'port': int(instance["Port"])
+                        'port': int(instance["Port"]),
+                        'groupId': groupId
                     })
             logging.info("del all redis: %s" % (redises))
+            docker_info = {}
             while len(redises) != 0:
-                docker_info = self.k8s.get_docker_info(redises[0]["host"], redises[0]["port"])
+                docker_info = self.k8s.get_docker_info(redises[0]["host"], redises[0]["port"], redises[0]["groupId"] )
                 dockers = self.k8s.query_all_docker(docker_info)
                 if len(dockers) != 0:
                     # 默认传入的参数不重
@@ -164,7 +184,14 @@ class Api(object):
                     
                     if will_del:
                         logging.info("[will del_docker] groupName:%s, groupId: %s, env: %s, dockerNum: %d " % (docker_info.groupName, docker_info.groupId, docker_info.env, docker_info.dockerNum));
-                        self.k8s.del_docker(docker_info)   
+                        
+                        if not self.k8s.del_docker(docker_info):
+                            time.sleep(5)
+                            if not self.k8s.del_docker(docker_info):
+                            	logging.warn("[del_docker] error, start try del with groupId - 10000000")
+                            	docker_info["groupId"] = docker_info["groupId"] - 10000000
+                            	if not self.k8s.del_docker(docker_info):
+                                    logging.warn("[del_docker] fail")
             self.credis.del_cluster(info["ID"])
 
         else:
@@ -218,3 +245,111 @@ class Api(object):
         else:
             print("function [cluster_dbsize] argv error!!!!!")
             return
+    def query_cluster_use_commands(self, argv):
+        argc = len(argv)
+        all = {}
+        if argc >= 1:
+            info = self.credis.get_cluster_info(argv[0])
+            groups = info["Groups"]
+            size = 0;
+            for group in groups:
+                instances = group["Instances"]
+                groupId = group["ID"]
+                print("groupId: %s" % (groupId))
+                for instance in instances:
+                    redis = redis_tool.RedisSession(instance["IPAddress"], int(instances[0]["Port"]))
+                    result = redis.info_commandstats();
+                    for command_stats in result:
+                        all[command_stats[8:]] = 1
+            print("cluster all used commans:")
+            print(all)
+        else:
+            print("function [query_cluster_use_commands] argv error!!!!!")
+            return
+    def get_clusters_use_commands(self, argv):
+        argc = len(argv)
+        if argc >= 1:
+            # type 
+            clusters = self.xpipe.get_clusters(argv[0])
+            for cluster in clusters:
+                print("cluster: %s" % cluster)
+                all = {}
+                info = self.credis.get_cluster_info(cluster)
+                groups = info["Groups"]
+                for group in groups:
+                    instances = group["Instances"]
+                    groupId = group["ID"]
+                    print("groupId: %s" % (groupId))
+                    for instance in instances:
+                        redis = redis_tool.RedisSession(instance["IPAddress"], int(instances[0]["Port"]))
+                        try:
+                            result = redis.info_commandstats();
+                            for command_stats in result:
+                                all[command_stats[8:]] = 1
+                        except Exception as error:
+                            print("info_commandstats error: %s", error)
+                print("cluster %s used commands: %s" % (cluster, all))
+        else:
+            print("function [get_clusters_use_commands] argv error!!!!!")
+            return
+    def cluster_add_slave(self, argv):
+        argc = len(argv)
+        if argc >= 1:
+            info = self.credis.get_cluster_info(argv[0])
+            orgId = info["ProductID"]
+            groups = info["Groups"]
+            for group in groups:
+                instances = group["Instances"]
+                groupId = group["ID"]
+                for instance in instances:
+                    if instance["ParentID"] == 0: # is master
+                        master_redis = redis_tool.RedisSession(instance["IPAddress"], int(instance["Port"]))
+                        docker_info = self.k8s.get_docker_info(instance["IPAddress"], int(instance["Port"]), groupId)
+                        master_maxmemory = master_redis.config_get("get","maxmemory");
+                        master_name_space = None;
+                        if docker_info.info["instanceType"] == "rediscrdt":
+                            master_name_space = master_redis.config_get("crdt.get", "crdt-gid").split(" ")[0];
+                        info = {}
+                        info["type"] = docker_info.info["label"];
+                        info["clusterName"] = docker_info.info["clusterName"];
+                        info["orgId"] = docker_info.info["orgId"];
+                        info["groupId"] = groupId;
+                        info["instanceType"] = docker_info.info["instanceType"];
+                        info["flavor"] = docker_info.info["flavor"];
+                        info["idc"] = docker_info.info["idc"];
+                        info["replicas"] = 1;
+                        info["env"] = docker_info.info["env"];
+                        docker_groupname = self.k8s.create_docker(info);
+                        try_num = 12 * 5;
+                        ginfo = {}
+                        ginfo["groupId"] = groupId;
+                        ginfo["groupName"] = docker_groupname;
+                        ginfo["env"] = docker_info.info["env"];
+                        while try_num > 0:
+                            docker_info_result = self.k8s.get_docker_info_by_groupname(ginfo)
+                            
+                            if docker_info_result != None and docker_info_result[0]["server"] != None and docker_info_result[0]["server"] != "":
+                                print(docker_info_result[0]["server"])
+                                break
+                            else:
+                                try_num -= 1
+                                if try_num == 0:
+                                    print("wait create docker fail %s "%(docker_groupname))
+                                    logging.error("wait create docker fail %s"%(docker_groupname))
+                                    return
+                                time.sleep(5)
+                        new_redis = redis_tool.RedisSession(docker_info_result[0]["server"], docker_info_result[0]["port"])
+                        new_redis.config_set("set", "maxmemory", master_maxmemory);
+                        if master_name_space != None:
+                            new_redis.config_set("crdt.set", "crdt-gid", master_name_space);
+                        #new_redis.slaveof(instance["IPAddress"], int(instance["Port"]))
+                        print("new_redis[%s]: %s:%d slaveof %s:%d\n"%(docker_groupname, docker_info_result[0]["server"], docker_info_result[0]["port"], instance["IPAddress"], int(instance["Port"])))
+                        
+        else:
+            print("function [cluster_add_slave] argv error!!!!!")
+            return
+            
+
+                
+
+        
