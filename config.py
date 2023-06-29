@@ -35,7 +35,7 @@ class Config(object):
         if self.env == Env.pro:
             result['Cookie'] = "_ga=GA1.2.479410682.1603190665; _RSG=wYa_E9NJCF0wh9EOJY1hfB; _RDG=286c8cf8a7ba3b229f2a17e693c1df54dd; _RGUID=03cc4d72-4efe-48ba-ba6b-0624d8389afa; nfes_isSupportWebP=1; _bfaStatusPVSend=1; _bfa=1.1603187049696.49ag06.1.1639135325751.1639139649859.827.1995.10650046130; _RF1=117.131.104.30; _bfaStatus=success; PRO_cas_principal=PRO-67642e7a686f75-MTY0ODU1NDgzMTUzNA-c371a98b2a644c958f4c69ffc2190c1d; PRO_principal=c97f9e69d4a3b65ff032d82959ee3cee-21c0779b-460f-4502-ac57-9cd089e712b4; offlineTicket=_D1C12CED08662CF525F2B46E4E763791D95BFA2C7578253C7414F1971EB1E9B0; PRO_CCST_SECRET_ADFC=PRO-67642e7a686f75-20afd02be46b4c7887c0a7262c1cbe69"
         else:
-            result['Cookie'] = "UAT_cas_principal=UAT-67642e7a686f75-MTY0NzUxMjEzNzQwMg-ff0f8ae4ab63480ab92e639f6a068d93";
+            result['Cookie'] = "Servers_Eid=S79608; UAT_cas_principal=UAT-67642e7a686f75-MTY4NjY0MzI1MDE1Mw-45a8836b9202458284bb2b85fb05b08d; FAT_cas_principal=FAT-67642e7a686f75-MTY4NjY0MzExMzIxMg-e64458eea2f54184a0447a6e96ccef04";
         return result
     def get_k8s_env(self):
         if self.env == Env.pro:

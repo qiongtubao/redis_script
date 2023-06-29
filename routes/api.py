@@ -292,6 +292,90 @@ class Api(object):
         else:
             print("function [get_clusters_use_commands] argv error!!!!!")
             return
+    def add_idc_redis(self, argv):
+        argc = len(argv)
+        # clustername IDC redisnum groupname
+        if argc >= 3:
+            cluster_name = argv[0]
+            groupname = argv[0]
+            if argc >= 4: 
+                groupname = argv[3]
+            info = self.credis.get_cluster_info(argv[0])
+            idc = argv[1]
+            orgId = info["ProductID"]
+            groups = info["Groups"]
+            i = 0
+            for group in groups:
+                i = i + 1
+                groupId = group["ID"]
+                info = {}
+                if len(group["Instances"]) > 0: 
+                    redis_info = self.xpipe.get_shard_redis_info(cluster_name,idc,groupname + "_" + str(i))
+                    instance = group["Instances"][0]
+                    master_redis = redis_tool.RedisSession(instance["IPAddress"], int(instance["Port"]))
+                    docker_info = self.k8s.get_docker_info(instance["IPAddress"], int(instance["Port"]), groupId)
+                    master_maxmemory = master_redis.config_get("get","maxmemory");
+                    master_name_space = None;
+                    if docker_info.info["instanceType"] == "rediscrdt":
+                        master_name_space = master_redis.config_get("crdt.get", "crdt-gid").split(" ")[0];
+                    info["type"] = docker_info.info["label"];
+                    info["clusterName"] = docker_info.info["clusterName"];
+                    info["orgId"] = docker_info.info["orgId"];
+                    info["groupId"] = groupId;
+                    info["instanceType"] = docker_info.info["instanceType"];
+                    info["flavor"] = docker_info.info["flavor"];
+                    info["idc"] = idc;
+                    info["replicas"] = int(argv[2]);
+                    info["env"] = docker_info.info["env"];
+                    if idc == "SIN-AWS" or idc == "FRA-AWS":
+                        info["arch"] = "arm64"
+                    docker_groupname = self.k8s.create_docker(info);
+                    logging.info("docker groupname %s" % docker_groupname);
+                    try_num = 12 * 5;
+                    ginfo = {}
+                    ginfo["groupId"] = groupId;
+                    ginfo["groupName"] = docker_groupname;
+                    ginfo["env"] = docker_info.info["env"];
+                    while try_num > 0:
+                        docker_info_result = self.k8s.get_docker_info_by_groupname(ginfo)
+                        if docker_info_result != None and docker_info_result[0]["server"] != None and docker_info_result[0]["server"] != "":
+                            print(docker_info_result[0]["server"])
+                            break
+                        else:
+                            try_num -= 1
+                            if try_num == 0:
+                                print("wait create docker fail %s "%(docker_groupname))
+                                logging.error("wait create docker fail %s"%(docker_groupname))
+                                return
+                            time.sleep(5)
+                    
+                    new_master = redis_tool.RedisSession(docker_info_result[0]["server"], docker_info_result[0]["port"])
+                    new_master_host = docker_info_result[0]["server"]
+                    new_master_port = int(docker_info_result[0]["port"])
+                    new_master.config_set("set", "maxmemory", master_maxmemory);
+                    redis_info['redises'].append({
+                        "redisPort": new_master_port,
+                        "master": True,
+                        "redisIp": new_master_host
+                    })
+                    if master_name_space != None:
+                        new_master.config_set("crdt.set", "crdt-gid", master_name_space);
+                    for i in range(1, len(docker_info_result)):
+                        new_slave = redis_tool.RedisSession(docker_info_result[i]["server"], docker_info_result[i]["port"])
+                        new_slave.config_set("set", "maxmemory", master_maxmemory);
+                        if master_name_space != None:
+                            new_slave.config_set("crdt.set", "crdt-gid", master_name_space);
+                        new_slave.slaveof(new_master_host, new_master_port)
+                        logging.info("new_slave[%s]: %s:%d slaveof %s:%d\n"%(docker_groupname, docker_info_result[i]["server"], docker_info_result[i]["port"], new_master_host, new_master_port))
+                        redis_info['redises'].append({
+                            "redisPort": int(docker_info_result[i]["port"]),
+                            "master": False,
+                            "redisIp": docker_info_result[i]["server"]
+                        })
+                    self.xpipe.update_shard_redis_info(cluster_name,idc,groupname + "_" + str(i), redis_info) 
+        else:
+            print("function [cluster_add_slave] argv error!!!!!")
+            return
     def cluster_add_slave(self, argv):
         argc = len(argv)
         if argc >= 1:
@@ -351,5 +435,7 @@ class Api(object):
             
 
                 
-
+    def test(self, argv):
+        for i in range(1, 3):
+            print(i)
         
