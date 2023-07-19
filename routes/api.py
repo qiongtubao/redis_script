@@ -102,7 +102,7 @@ class Api(object):
     def k8s_find(self, argv):
         argc = len(argv)
         if  argc >= 2:
-            print(self.k8s.get_docker_info(argv[0], argv[1]))
+            print("%s" % (self.k8s.get_docker_info(argv[0], 6379, argv[1])))
         else:
             print("function [k8s_find] argv error!!!!!")
             return 
@@ -110,8 +110,10 @@ class Api(object):
         argc = len(argv)
         if argc >= 1:
             map = {}
+            groupId = argv.pop(0);
+            print("%s" % argv)
             while len(argv) != 0:
-                info = self.k8s.get_docker_info(argv[0])
+                info = self.k8s.get_docker_info(argv[0], 6379, groupId)
                 ips = self.k8s.query_all_docker(info)
                 num = 0
                 # 默认传入的参数不重
@@ -119,7 +121,7 @@ class Api(object):
                 for ip in ips:
                     remove = False
                     for i in range(len(argv)-1, -1, -1):
-                        if argv[i] == ip:
+                        if argv[i] == ip["host"] and ip["port"] == 6379:
                             argv.pop(i)
                             remove = True
                             break
@@ -156,6 +158,7 @@ class Api(object):
                         for sentinel in result.sentinels:
                             sentinel.remove(result.monitor_name)
                         print("remove %s:%d sentinels success" % (instance["IPAddress"], instance["Port"]))
+                for instance in instances:
                     self.credis.del_instance(instance["ID"])
                     redises.append({
                         'host': instance["IPAddress"], 
@@ -311,6 +314,8 @@ class Api(object):
                 info = {}
                 if len(group["Instances"]) > 0: 
                     redis_info = self.xpipe.get_shard_redis_info(cluster_name,idc,groupname + "_" + str(i))
+                    if redis_info["redises"] == None:
+                        redis_info["redises"] = []
                     instance = group["Instances"][0]
                     master_redis = redis_tool.RedisSession(instance["IPAddress"], int(instance["Port"]))
                     docker_info = self.k8s.get_docker_info(instance["IPAddress"], int(instance["Port"]), groupId)
@@ -358,6 +363,15 @@ class Api(object):
                         "master": True,
                         "redisIp": new_master_host
                     })
+                    self.credis.add_instance({
+                        "GroupId": groupId,
+                        "IPAddress": new_master_host,
+                        "Port": new_master_port,
+                        "Env": idc,
+                        "ParentID": 0,#0 master 1 slave
+                        "Status": 1,
+                        "CanRead": True
+                    })
                     if master_name_space != None:
                         new_master.config_set("crdt.set", "crdt-gid", master_name_space);
                     for i in range(1, len(docker_info_result)):
@@ -372,10 +386,21 @@ class Api(object):
                             "master": False,
                             "redisIp": docker_info_result[i]["server"]
                         })
+                        self.credis.add_instance({
+                            "GroupId": groupId,
+                            "IPAddress": docker_info_result[i]["server"],
+                            "Port": docker_info_result[i]["port"],
+                            "Env": idc,
+                            "ParentID": 1,
+                            "Status": 1,
+                            "CanRead": True
+                        })
                     self.xpipe.update_shard_redis_info(cluster_name,idc,groupname + "_" + str(i), redis_info) 
+                    
         else:
             print("function [cluster_add_slave] argv error!!!!!")
             return
+    
     def cluster_add_slave(self, argv):
         argc = len(argv)
         if argc >= 1:
@@ -438,4 +463,27 @@ class Api(object):
     def test(self, argv):
         for i in range(1, 3):
             print(i)
+    def test_credis_add_redis(self, argv):
+        info = self.credis.get_cluster_info(argv[0])
+        groups = info["Groups"]
+        for group in groups:
+            groupId = group["ID"]
+            self.credis.add_instance({
+                "GroupID": groupId,
+                "IPAddress": "127.1.1.1",
+                "Port": 6380,
+                "Env": "NTGXY",
+                "ParentID": 0,
+                "Status": 1,
+                "CanRead": True
+            })
+            self.credis.add_instance({
+                "GroupID": groupId,
+                "IPAddress": "127.1.1.1",
+                "Port": 6381,
+                "Env": "NTGXY",
+                "ParentID": 1,
+                "Status": 1,
+                "CanRead": True
+            })
         
