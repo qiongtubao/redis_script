@@ -21,8 +21,9 @@ class Xpipe(object):
         return result
     def get_shard_redis_info(self, cluster, idc, group):
         payload = {}
+        logging.info(self.url + "/console/clusters/" + cluster + "/dcs/" + idc + "/shards/" + group)
         res = requests.get(self.url + "/console/clusters/" + cluster + "/dcs/" + idc + "/shards/" + group, headers=self.headers, data=payload)
-        logging.info("[get_shard_redis_info] result: %s" %  res.json())
+        logging.info("[get_shard_redis_info] result: %s" %  res.text)
         return res.json()
     def update_shard_redis_info(self, cluster, idc, group, redisinfo):
         res = requests.post(self.url + "/console/clusters/" + cluster + "/dcs/" + idc + "/shards/" + group, headers=self.headers, data=json.dumps(redisinfo))

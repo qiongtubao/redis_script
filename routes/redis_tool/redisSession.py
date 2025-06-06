@@ -92,3 +92,12 @@ class RedisSession(object):
         session = redis.StrictRedis(self.host, self.port, socket_timeout = 5)
         logging.info("redis[%s:%d] slaveof %s %d",self.host, self.port, host, port)
         return session.slaveof(host, port)
+    def peerof(self, gid, host, port):
+        session = redis.StrictRedis(self.host, self.port, socket_timeout = 5)
+        if host == None:
+            logging.info("redis[%s:%d] peerof %s no one",self.host, self.port, gid)
+            session.execute_command("peerof", gid, "no", "one")
+        else :
+            logging.info("redis[%s:%d] peerof %s %s %d",self.host, self.port, gid, host, port)
+            session.execute_command("peerof", gid, host, port)
+        
