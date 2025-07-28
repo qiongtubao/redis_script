@@ -660,7 +660,24 @@ class Api(object):
 		else:
 			print("function [create_tmp_cluster] argv error!!!!!")
 			return
-		
+	def cluster_get_avg_ttl(self, argv):
+		argc = len(argv)
+		if argc >= 1:
+			info = self.credis.get_cluster_info(argv[0])	
+			if len(info["Groups"]) > 0:
+				group = info["Groups"][0]
+				instances = group["Instances"]
+				for instance in instances:
+					if instance["ParentID"] == 0: # is master
+						master_redis = redis_tool.RedisSession(instance["IPAddress"], int(instance["Port"]))
+						result = master_redis.info("keyspace");		
+						print("info keysapce ", result)
+						
+
+			return                
+		else:
+			print("function [cluster_get_avg_ttl] argv error!!!!!")
+			return 
 	def cluster_is_use_command(self, argv):
 		argc = len(argv)
 		match_commands = ["zadd", "zincrby", "zrange", "zremrangebyscore","zrangebyscore","zrevrangebyscore"];
@@ -760,6 +777,49 @@ class Api(object):
 		else:
 			print("function [test_create_cluster] argv error!!!!!")
 			return 
+
+	def latte_delete_same_machine_cluster(self, argv):
+		argc = len(argv)
+		if  argc >= 1:
+			info = self.credis.get_cluster_info(argv[0])
+			# cluster.json
+			file = utils.File(argv[0] + ".json")
+			file.write_json(info)
+			groups = info["Groups"]
+			if len(groups) > 0:
+				self.credis.close_credis_monitor(argv[0], 10)
+			redises = []
+			for group in groups:
+				instances = group["Instances"]
+				groupId = group["ID"]
+				print("groupId: %s" % (groupId))
+				for instance in instances:
+					print("instance: %s:%d ,id :%d" %(instance["IPAddress"], instance["Port"], instance["ID"]))
+					redis = redis_tool.RedisSession(instance["IPAddress"], int(instance["Port"]))
+					try:
+						result = redis.get_sentinels()
+						if result != None:
+							for sentinel in result.sentinels:
+								sentinel.remove(result.monitor_name)
+							print("remove %s:%d sentinels success" % (instance["IPAddress"], instance["Port"]))
+					except  Exception as ex:
+						print("%s:%d get sentinels error:%s" % (instance["IPAddress"], instance["Port"],ex))
+					
+					redises.append({
+						'host': instance["IPAddress"], 
+						'port': int(instance["Port"]),
+						'groupId': groupId - 10000000
+					})
+
+				for instance in instances:
+					self.credis.del_instance(instance["ID"])
+					
+			logging.info("del all redis: %s" % (redises))
+			self.credis.del_cluster(info["ID"])
+
+		else:
+			print("function [del_cluster] argv error!!!!!")
+			return
 	def test(self, argv):
 		for i in range(1, 3):
 			print(i)

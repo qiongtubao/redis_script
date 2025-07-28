@@ -100,4 +100,6 @@ class RedisSession(object):
         else :
             logging.info("redis[%s:%d] peerof %s %s %d",self.host, self.port, gid, host, port)
             session.execute_command("peerof", gid, host, port)
-        
+    def info(self, module):
+        session = redis.StrictRedis(self.host, self.port, socket_timeout = 5)
+        return session.info(module)
